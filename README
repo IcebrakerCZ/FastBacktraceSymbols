@@ -1,0 +1,17 @@
+Fast Backtrace Symbols Library
+
+GIT:
+        https://github.com/IcebrakerCZ/FastBacktraceSymbols.git
+
+NOTES:
+        Library providing the same functionality like GLibc `backtrace_symbols`
+        call but many times faster and with demangled symbol names wherever possible.
+
+LICENSE:
+        LGPLv3+
+
+AUTHORS:
+        Jan Horak
+
+REQUIREMENTS:
+        Recent g++, Linux
