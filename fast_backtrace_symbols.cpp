@@ -308,7 +308,6 @@ private:
 
   BacktraceSymbols& FindMatchingFile(void* symbol_addr)
   {
-    printf("symbol: %p\n", symbol_addr);
     FileMatch match;
     match.address = symbol_addr;
     dl_iterate_phdr(FindMatchingFileCallback, &match);
@@ -318,8 +317,6 @@ private:
     {
       bin_name = match.file;
     }
-
-    printf("symbol: %p -> base: %p\n", symbol_addr, match.base);
 
     {
       std::shared_lock lock(backtrace_mutex);
