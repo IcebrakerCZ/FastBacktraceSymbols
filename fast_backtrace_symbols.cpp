@@ -40,10 +40,10 @@
    along with this program; if not, write to the Free Software
    Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-#define fatal(a, b) exit(1)
-#define bfd_fatal(a) exit(1)
-#define bfd_nonfatal(a) exit(1)
-#define list_matching_formats(a) exit(1)
+#define fatal(a, b) abort()
+#define bfd_fatal(a) abort()
+#define bfd_nonfatal(a) abort()
+#define list_matching_formats(a) abort()
 
 #include <string.h>
 #include <stdio.h>
@@ -75,15 +75,18 @@ public:
     free(m_static_syms);
     free(m_dynamic_syms);
 
-    bfd_close(m_abfd);
+    if (m_abfd)
+    {
+      bfd_close(m_abfd);
+    }
   }
 
 
-  void initialize(const char* bin_name, void* addrs_base)
+  bool initialize(const char* bin_name, void* addrs_base)
   {
     if (m_abfd != NULL)
     {
-      return;
+      return true;
     }
 
     m_filename = bin_name;
@@ -93,7 +96,7 @@ public:
 
     if (m_abfd == NULL)
     {
-      bfd_fatal(m_filename);
+      return false;
     }
 
     if (bfd_check_format(m_abfd, bfd_archive))
@@ -112,13 +115,13 @@ public:
         free(matching);
       }
 
-      exit(1);
+      abort();
     }
 
     if ((bfd_get_file_flags(m_abfd) & HAS_SYMS) == 0)
     {
       printf("backtrace_symbols.cpp::slurp_symtab: File '%s' have no symbols.\n", m_filename.c_str());
-      return;
+      return true;
     }
 
     unsigned int size;
@@ -131,6 +134,8 @@ public:
     }
 
     bfd_map_over_sections(m_abfd, SaveSectionCallback, this);
+
+    return true;
   }
 
 
@@ -284,6 +289,8 @@ public:
   BacktraceFiles()
   {
     bfd_init();
+
+    dl_iterate_phdr(FindMatchingFileCallback, &m_symbol_intervals);
   }
 
 
@@ -297,56 +304,48 @@ public:
 
 private:
 
-  struct FileMatch
+  struct SymbolInterval
   {
-    const char *file = NULL;
-    void *address = NULL;
-    void *base = NULL;
-    void *hdr = NULL;
-  };
+    void* min;
+    void* max;
 
+    // Note: We know that the intervals can't overlap.
+    bool operator<(const SymbolInterval& other) const
+    {
+      return min < other.min && max <= other.max;
+    }
+  };
 
   BacktraceSymbols& FindMatchingFile(void* symbol_addr)
   {
-    FileMatch match;
-    match.address = symbol_addr;
-    dl_iterate_phdr(FindMatchingFileCallback, &match);
-
-    const char* bin_name = "/proc/self/exe";
-    if (match.file && strlen(match.file))
-    {
-      bin_name = match.file;
-    }
-
     {
       std::shared_lock lock(backtrace_mutex);
 
-      auto iter = m_filenames.find(bin_name);
-      if (iter != m_filenames.end())
+      auto iter = m_symbol_intervals.find({symbol_addr, symbol_addr});
+      if (iter != m_symbol_intervals.end())
       {
-        return iter->second;
+        return *iter->second;
       }
     }
 
     std::unique_lock lock(backtrace_mutex);
 
-    auto iter = m_filenames.find(bin_name);
-    if (iter != m_filenames.end())
+    dl_iterate_phdr(FindMatchingFileCallback, this);
+
+    auto iter = m_symbol_intervals.find({symbol_addr, symbol_addr});
+    if (iter != m_symbol_intervals.end())
     {
-      return iter->second;
+      return *iter->second;
     }
 
-    BacktraceSymbols& result = m_filenames[bin_name];
-
-    result.initialize(bin_name, match.base);
-
-    return result;
+    printf("Symbol %p not found in the process.\n", symbol_addr);
+    abort();
   }
 
 
   static int FindMatchingFileCallback(dl_phdr_info *info, size_t size, void *data)
   {
-    FileMatch& match = *(FileMatch *) data;
+    BacktraceFiles& backtrace_files = *(BacktraceFiles*) data;
 
     /* This code is modeled from Gfind_proc_info-lsb.c:callback() from libunwind */
     ElfW(Addr) load_base = info->dlpi_addr;
@@ -360,21 +359,33 @@ private:
         continue;
       }
 
-      ElfW(Addr) vaddr = phdr->p_vaddr + load_base;
-      if (match.address >= (void*) vaddr && match.address < (void*) ((char*) vaddr + phdr->p_memsz))
+      const char* bin_name = "/proc/self/exe";
+      if (info->dlpi_name && strlen(info->dlpi_name))
       {
-        /* we found a match */
-        match.file = info->dlpi_name;
-        match.base = (void*) info->dlpi_addr;
-        return 1;
+        bin_name = info->dlpi_name;
       }
+
+      BacktraceSymbols& result = backtrace_files.m_filenames[bin_name];
+
+      if (!result.initialize(bin_name, (void*) info->dlpi_addr))
+      {
+        backtrace_files.m_filenames.erase(bin_name);
+        continue;
+      }
+
+      SymbolInterval symbol_interval {.min = (void*) (phdr->p_vaddr + load_base),
+                                      .max = (void*) (phdr->p_vaddr + load_base + phdr->p_memsz)};
+
+      backtrace_files.m_symbol_intervals[symbol_interval] = &result;
     }
 
     return 0;
   }
 
 
-public:
+private:
+
+  std::map<SymbolInterval, BacktraceSymbols*> m_symbol_intervals;
 
   std::map<std::string, BacktraceSymbols> m_filenames;
 
@@ -395,8 +406,6 @@ extern "C"
 
 char **backtrace_symbols(void *const *buffer, int stack_depth)
 {
-  bfd_init();
-
   char ** locations = (char**) malloc(stack_depth * sizeof(char*));
 
   for (int x = stack_depth - 1; x >= 0; --x)
