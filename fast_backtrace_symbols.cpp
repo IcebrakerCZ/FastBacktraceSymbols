@@ -59,169 +59,52 @@
 #include <tuple>
 #include <vector>
 
-struct BacktraceSymbols
+
+namespace
 {
+
+static std::shared_mutex backtrace_mutex;
+
+
+class BacktraceSymbols
+{
+public:
+
   ~BacktraceSymbols()
   {
-    free(static_syms);
-    free(dynamic_syms);
+    free(m_static_syms);
+    free(m_dynamic_syms);
 
-    bfd_close(abfd);
+    bfd_close(m_abfd);
   }
 
-  std::string filename;
-  bfd* abfd = NULL;
 
-  asymbol **static_syms = NULL;
-  asymbol **dynamic_syms = NULL;
-
-  std::map<bfd_vma, std::string> addresses;
-
-  std::vector<std::tuple<bfd_vma, bfd_size_type, asection*>> sections;
-
-
-bool find_address_in_sections(bfd_vma pc, const char** filename, const char** functionname, unsigned int* line)
-{
-  for (const auto& [vma, size, section] : sections)
+  void initialize(const char* bin_name, void* addrs_base)
   {
-    if (pc < vma || pc >= vma + size)
+    if (m_abfd != NULL)
     {
-      continue;
+      return;
     }
 
+    m_filename = bin_name;
+    m_addrs_base = addrs_base;
 
-    if (   (static_syms != NULL && bfd_find_nearest_line(abfd, section, static_syms, pc - vma, filename, functionname, line))
-        || (dynamic_syms != NULL && bfd_find_nearest_line(abfd, section, dynamic_syms, pc - vma, filename, functionname, line))
-       )
+    m_abfd = bfd_openr(m_filename.c_str(), NULL);
+
+    if (m_abfd == NULL)
     {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-
-static void save_section(bfd *abfd, asection *section, void *data)
-{
-  if ((bfd_section_flags(section) & SEC_ALLOC) == 0)
-  {
-    return;
-  }
-
-  bfd_vma vma = bfd_section_vma(section);
-
-  bfd_size_type size = bfd_section_size(section);
-
-  BacktraceSymbols& item = *((BacktraceSymbols*) data);
-
-  item.sections.push_back(std::make_tuple(vma, size, section));
-}
-
-
-void slurp_sections()
-{
-  bfd_map_over_sections(abfd, save_section, this);
-//  printf("BacktraceSymbols::slurp_sections: size=%lu\n", sections.size());
-}
-
-}; // struct BacktraceSymbols
-
-
-/* Read in the symbol table.  */
-
-static void slurp_symtab(BacktraceSymbols& item)
-{
-  if ((bfd_get_file_flags(item.abfd) & HAS_SYMS) == 0)
-  {
-    printf("backtrace_symbols.cpp::slurp_symtab: File '%s' have no symbols.\n", item.filename.c_str());
-    return;
-  }
-
-  unsigned int size;
-  long static_symcount  = bfd_read_minisymbols(item.abfd, false, (void**) ((PTR) & item.static_syms), &size);
-  long dynamic_symcount = bfd_read_minisymbols(item.abfd, true /* dynamic */, (void**) ((PTR) & item.dynamic_syms), &size);
-
-  if (static_symcount < 0 && dynamic_symcount < 0)
-  {
-    bfd_fatal(bfd_get_filename(item.abfd));
-  }
-}
-
-static std::string translate_addresses_buf(BacktraceSymbols& item, bfd_vma addr)
-{
-  std::string result;
-
-  const char* filename = NULL;
-  const char* functionname = NULL;
-  unsigned int line = 0;
-
-  if (!item.find_address_in_sections(addr, &filename, &functionname, &line))
-  {
-    result += "[0x";
-    result += std::to_string(addr);
-    result += "] \?\?() \?\?:0";
-    return result;
-  }
-
-  const char *demangled_functionname = NULL;
-
-  if (functionname == NULL || functionname[0] == '\0')
-  {
-    demangled_functionname = "??";
-  }
-  else
-  {
-    demangled_functionname = bfd_demangle(item.abfd, functionname, 0);
-    if (demangled_functionname == NULL)
-    {
-      demangled_functionname = functionname;
-    }
-  }
-
-  if (filename == NULL || filename[0] == '\0')
-  {
-    filename = "??";
-  }
-  else
-  {
-    char *h = (char*) strrchr(filename, '/');
-    if (h != NULL)
-    {
-      filename = h + 1;
-    }
-  }
-
-  result += filename;
-  result += ":";
-  result += std::to_string(line);
-  result += "\t";
-  result += demangled_functionname;
-
-  return result;
-}
-/* Process a file.  */
-
-static std::string process_file(BacktraceSymbols& item, bfd_vma addr)
-{
-  if (item.abfd == NULL)
-  {
-    item.abfd = bfd_openr(item.filename.c_str(), NULL);
-
-    if (item.abfd == NULL)
-    {
-      bfd_fatal(item.filename);
+      bfd_fatal(m_filename);
     }
 
-    if (bfd_check_format(item.abfd, bfd_archive))
+    if (bfd_check_format(m_abfd, bfd_archive))
     {
-      fatal("%s: can not get addresses from archive", item.filename);
+      fatal("%s: can not get addresses from archive", m_filename.c_str());
     }
 
     char **matching;
-    if (!bfd_check_format_matches(item.abfd, bfd_object, &matching))
+    if (!bfd_check_format_matches(m_abfd, bfd_object, &matching))
     {
-      bfd_nonfatal(bfd_get_filename(item.abfd));
+      bfd_nonfatal(bfd_get_filename(m_abfd));
 
       if (bfd_get_error() == bfd_error_file_ambiguously_recognized)
       {
@@ -231,73 +114,204 @@ static std::string process_file(BacktraceSymbols& item, bfd_vma addr)
 
       exit(1);
     }
-  }
 
-  if (item.static_syms == NULL && item.dynamic_syms == NULL)
-  {
-    slurp_symtab(item);
-    item.slurp_sections();
-  }
-
-  return translate_addresses_buf(item, addr);
-}
-
-struct file_match
-{
-  const char *file = NULL;
-  void *address = NULL;
-  void *base = NULL;
-  void *hdr = NULL;
-};
-
-static int find_matching_file(struct dl_phdr_info *info, size_t size, void *data)
-{
-  struct file_match *match = (struct file_match *) data;
-  /* This code is modeled from Gfind_proc_info-lsb.c:callback() from libunwind */
-  long n;
-  const ElfW(Phdr) *phdr;
-
-  ElfW(Addr) load_base = info->dlpi_addr;
-
-  phdr = info->dlpi_phdr;
-
-  for (n = info->dlpi_phnum; --n >= 0; ++phdr)
-  {
-    if (phdr->p_type == PT_LOAD)
+    if ((bfd_get_file_flags(m_abfd) & HAS_SYMS) == 0)
     {
-      ElfW(Addr) vaddr = phdr->p_vaddr + load_base;
-      if (match->address >= (void*) vaddr && match->address < (void*) ((char*) vaddr + phdr->p_memsz))
+      printf("backtrace_symbols.cpp::slurp_symtab: File '%s' have no symbols.\n", m_filename.c_str());
+      return;
+    }
+
+    unsigned int size;
+    long static_symcount  = bfd_read_minisymbols(m_abfd, false, (void**) ((PTR) & m_static_syms) , &size);
+    long dynamic_symcount = bfd_read_minisymbols(m_abfd, true , (void**) ((PTR) & m_dynamic_syms), &size);
+
+    if (static_symcount < 0 || dynamic_symcount < 0)
+    {
+      bfd_fatal(bfd_get_filename(m_abfd));
+    }
+
+    bfd_map_over_sections(m_abfd, SaveSectionCallback, this);
+  }
+
+
+  const std::string& DemangleSymbol(void* symbol_addr)
+  {
+    bfd_vma addr = (char*) symbol_addr - (char*) m_addrs_base;
+
+    {
+      std::shared_lock lock(backtrace_mutex);
+
+      auto iter = m_addresses.find(addr);
+      if (iter != m_addresses.end())
       {
-        /* we found a match */
-        match->file = info->dlpi_name;
-        match->base = (void*) info->dlpi_addr;
-        return 1;
+        return iter->second;
       }
     }
+
+    std::unique_lock lock(backtrace_mutex);
+
+    auto iter = m_addresses.find(addr);
+    if (iter != m_addresses.end())
+    {
+      return iter->second;
+    }
+
+    return UpdateAddress(addr);
   }
 
-  return 0;
-}
 
+private:
 
-std::shared_mutex filenames_map_mutex;
-
-std::map<std::string, BacktraceSymbols> filenames_map;
-
-
-char **backtrace_symbols(void *const *buffer, int stack_depth)
-{
-  bfd_init();
-
-  char **locations = (char**) malloc(stack_depth * sizeof(char*));
-
-  for (int x = stack_depth - 1; x >= 0; --x)
+  bool FindAddressInSections(bfd_vma pc, const char** filename, const char** functionname, unsigned int* line)
   {
-    struct file_match match;
-    match.address = buffer[x];
-    dl_iterate_phdr(find_matching_file, &match);
+    for (const auto& [vma, size, section] : m_sections)
+    {
+      if (pc < vma || pc >= vma + size)
+      {
+        continue;
+      }
 
-    bfd_vma addr = (char*) buffer[x] - (char*) match.base;
+
+      if (   (   m_static_syms != NULL
+              && bfd_find_nearest_line(m_abfd, section, m_static_syms, pc - vma, filename, functionname, line)
+             )
+          || (   m_dynamic_syms != NULL
+              && bfd_find_nearest_line(m_abfd, section, m_dynamic_syms, pc - vma, filename, functionname, line)
+             )
+         )
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+
+  const std::string& UpdateAddress(bfd_vma addr)
+  {
+    std::string result;
+
+    const char* filename = NULL;
+    const char* functionname = NULL;
+    unsigned int line = 0;
+
+    if (!FindAddressInSections(addr, &filename, &functionname, &line))
+    {
+      result += "[0x";
+      result += std::to_string(addr);
+      result += "] \?\?() \?\?:0";
+
+      return m_addresses.emplace(std::make_pair(addr, std::move(result))).first->second;
+    }
+
+    const char *demangled_functionname = NULL;
+
+    if (functionname == NULL || functionname[0] == '\0')
+    {
+      demangled_functionname = "??";
+    }
+    else
+    {
+      demangled_functionname = bfd_demangle(m_abfd, functionname, 0);
+      if (demangled_functionname == NULL)
+      {
+        demangled_functionname = functionname;
+      }
+    }
+
+    if (filename == NULL || filename[0] == '\0')
+    {
+      filename = "??";
+    }
+    else
+    {
+      char *h = (char*) strrchr(filename, '/');
+      if (h != NULL)
+      {
+        filename = h + 1;
+      }
+    }
+
+    result += filename;
+    result += ":";
+    result += std::to_string(line);
+    result += "\t";
+    result += demangled_functionname;
+
+    return m_addresses.emplace(std::make_pair(addr, std::move(result))).first->second;
+  }
+
+
+  static void SaveSectionCallback(bfd *abfd, asection *section, void *data)
+  {
+    if ((bfd_section_flags(section) & SEC_ALLOC) == 0)
+    {
+      return;
+    }
+
+    bfd_vma vma = bfd_section_vma(section);
+
+    bfd_size_type size = bfd_section_size(section);
+
+    BacktraceSymbols* item = (BacktraceSymbols*) data;
+
+    item->m_sections.push_back(std::make_tuple(vma, size, section));
+  }
+
+
+public:
+
+  std::string m_filename;
+  void* m_addrs_base = NULL;
+
+  bfd* m_abfd = NULL;
+
+  asymbol **m_static_syms = NULL;
+  asymbol **m_dynamic_syms = NULL;
+
+  std::map<bfd_vma, std::string> m_addresses;
+
+  std::vector<std::tuple<bfd_vma, bfd_size_type, asection*>> m_sections;
+
+}; // struct BacktraceSymbols
+
+
+class BacktraceFiles
+{
+public:
+
+  BacktraceFiles()
+  {
+    bfd_init();
+  }
+
+
+  const std::string& FindMatchingSymbol(void* symbol_addr)
+  {
+    BacktraceSymbols& item = FindMatchingFile(symbol_addr);
+
+    return item.DemangleSymbol(symbol_addr);
+  }
+
+
+private:
+
+  struct FileMatch
+  {
+    const char *file = NULL;
+    void *address = NULL;
+    void *base = NULL;
+    void *hdr = NULL;
+  };
+
+
+  BacktraceSymbols& FindMatchingFile(void* symbol_addr)
+  {
+    printf("symbol: %p\n", symbol_addr);
+    FileMatch match;
+    match.address = symbol_addr;
+    dl_iterate_phdr(FindMatchingFileCallback, &match);
 
     const char* bin_name = "/proc/self/exe";
     if (match.file && strlen(match.file))
@@ -305,50 +319,92 @@ char **backtrace_symbols(void *const *buffer, int stack_depth)
       bin_name = match.file;
     }
 
-    BacktraceSymbols* item = nullptr;
-    {
-      std::shared_lock lock(filenames_map_mutex);
+    printf("symbol: %p -> base: %p\n", symbol_addr, match.base);
 
-      auto iter = filenames_map.find(bin_name);
-      if (iter != filenames_map.end())
+    {
+      std::shared_lock lock(backtrace_mutex);
+
+      auto iter = m_filenames.find(bin_name);
+      if (iter != m_filenames.end())
       {
-        item = &iter->second;
+        return iter->second;
       }
     }
 
-    if (item == nullptr)
-    {
-      std::unique_lock lock(filenames_map_mutex);
+    std::unique_lock lock(backtrace_mutex);
 
-      item = &filenames_map[bin_name];
-      item->filename = bin_name;
+    auto iter = m_filenames.find(bin_name);
+    if (iter != m_filenames.end())
+    {
+      return iter->second;
     }
 
+    BacktraceSymbols& result = m_filenames[bin_name];
 
-    std::string* symbol = nullptr;
+    result.initialize(bin_name, match.base);
+
+    return result;
+  }
+
+
+  static int FindMatchingFileCallback(dl_phdr_info *info, size_t size, void *data)
+  {
+    FileMatch& match = *(FileMatch *) data;
+
+    /* This code is modeled from Gfind_proc_info-lsb.c:callback() from libunwind */
+    ElfW(Addr) load_base = info->dlpi_addr;
+
+    const ElfW(Phdr) *phdr = info->dlpi_phdr;
+
+    for (long n = info->dlpi_phnum; --n >= 0; ++phdr)
     {
-      std::shared_lock lock(filenames_map_mutex);
-
-      auto iter = item->addresses.find(addr);
-      if (iter != item->addresses.end())
+      if (phdr->p_type != PT_LOAD)
       {
-        symbol = &iter->second;
+        continue;
+      }
+
+      ElfW(Addr) vaddr = phdr->p_vaddr + load_base;
+      if (match.address >= (void*) vaddr && match.address < (void*) ((char*) vaddr + phdr->p_memsz))
+      {
+        /* we found a match */
+        match.file = info->dlpi_name;
+        match.base = (void*) info->dlpi_addr;
+        return 1;
       }
     }
 
-    if (symbol == nullptr)
-    {
-      std::unique_lock lock(filenames_map_mutex);
+    return 0;
+  }
 
-      symbol = &item->addresses[addr];
 
-      if (symbol->empty())
-      {
-        *symbol = process_file(*item, addr);
-      }
-    }
+public:
 
-    locations[x] = symbol->data();
+  std::map<std::string, BacktraceSymbols> m_filenames;
+
+}; // class BacktraceFiles
+
+
+static BacktraceFiles backtrace_files;
+
+
+} // anonymous namespace
+
+
+extern "C"
+{
+  char **backtrace_symbols(void *const *buffer, int stack_depth);
+}
+
+
+char **backtrace_symbols(void *const *buffer, int stack_depth)
+{
+  bfd_init();
+
+  char ** locations = (char**) malloc(stack_depth * sizeof(char*));
+
+  for (int x = stack_depth - 1; x >= 0; --x)
+  {
+    locations[x] = (char*) backtrace_files.FindMatchingSymbol(buffer[x]).c_str();
   }
 
   return locations;
