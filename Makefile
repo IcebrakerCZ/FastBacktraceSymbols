@@ -1,4 +1,4 @@
-CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O2 -ggdb3
+CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O3 -ggdb3
 CXXFLGAS += -fno-omit-frame-pointer
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
