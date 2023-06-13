@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# Scripts
+fast_backtrace_symbols
