@@ -1,5 +1,5 @@
-#include "test.h"
 #include "test_a.h"
+//#include "fast_backtrace_symbols.h"
 
 #include <chrono>
 #include <iostream>
@@ -21,11 +21,13 @@ bool backtrace_symbols_test(const unsigned DEPTH)
 {
   assert(DEPTH <= MAX_DEPTH);
 
+  // Stop the recursive calls
   if (DEPTH == MAX_DEPTH)
   {
     return false;
   }
 
+  // Continue with the recursive calls but do not test backtrace gather.
   if (requested_depths.count(DEPTH) == 0)
   {
     return true;
@@ -123,7 +125,7 @@ int main(int argc, char* argv[])
   std::cout << "}" << std::endl;
 
   std::cout << std::endl;
-  backtrace_symbols_test_a(0);
+  backtrace_symbols_test_a(0, backtrace_symbols_test);
 
   return 0;
 }

@@ -1,14 +1,15 @@
-#include "test.h"
 #include "test_a.h"
 
-void backtrace_symbols_test_b(unsigned depth)
+#include <iostream>
+
+void backtrace_symbols_test_b(unsigned depth, bool (*callback)(unsigned))
 {
   ++depth;
 
-  if (!backtrace_symbols_test(depth))
+  if (!callback(depth))
   {
     return;
   }
 
-  backtrace_symbols_test_a(depth);
+  backtrace_symbols_test_a(depth, callback);
 }

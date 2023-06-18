@@ -52,7 +52,6 @@
 #include <bfd.h>
 #include <dlfcn.h>
 #include <link.h>
-#include <unwind.h>
 
 #include <map>
 #include <shared_mutex>
@@ -419,6 +418,10 @@ char **backtrace_symbols(void *const *buffer, int stack_depth)
 }
 
 
+#if 0
+#include <unwind.h>
+#include <libunwind.h>
+
 struct trace_arg
 {
   void **array;
@@ -426,13 +429,6 @@ struct trace_arg
   int cnt;
   int size;
 };
-
-
-static inline void *
-unwind_arch_adjustment (void *prev, void *addr)
-{
-  return addr;
-}
 
 
 static _Unwind_Reason_Code
@@ -443,32 +439,34 @@ backtrace_helper (struct _Unwind_Context *ctx, void *a)
   /* We are first called with address in the __backtrace function.
      Skip it.  */
   if (arg->cnt != -1)
+  {
+    arg->array[arg->cnt] = (void *) _Unwind_GetIP (ctx);
+
+    /* Check whether we make any progress.  */
+    _Unwind_Word cfa = _Unwind_GetCFA (ctx);
+
+    if (arg->cnt > 0 && arg->array[arg->cnt - 1] == arg->array[arg->cnt] && cfa == arg->cfa)
     {
-      arg->array[arg->cnt] = (void *) _Unwind_GetIP (ctx);
-      if (arg->cnt > 0)
-	arg->array[arg->cnt]
-	  = unwind_arch_adjustment (arg->array[arg->cnt - 1],
-				    arg->array[arg->cnt]);
-
-      /* Check whether we make any progress.  */
-      _Unwind_Word cfa = _Unwind_GetCFA (ctx);
-
-      if (arg->cnt > 0 && arg->array[arg->cnt - 1] == arg->array[arg->cnt]
-	 && cfa == arg->cfa)
-       return _URC_END_OF_STACK;
-      arg->cfa = cfa;
+        return _URC_END_OF_STACK;
     }
+
+    arg->cfa = cfa;
+  }
+
   if (++arg->cnt == arg->size)
+  {
     return _URC_END_OF_STACK;
+  }
+
   return _URC_NO_REASON;
 }
 
 
-char **fast_backtrace_symbols(void **array, int size, int* used_size)
+int backtrace(void **array, int size)
 {
   if (size <= 0)
   {
-    return NULL;
+    return 0;
   }
 
   struct trace_arg arg = {.array = array, .cfa = 0, .cnt = -1 , .size = size};
@@ -484,10 +482,27 @@ char **fast_backtrace_symbols(void **array, int size, int* used_size)
 
   if (arg.cnt == -1)
   {
+    return 0;
+  }
+
+  return arg.cnt;
+}
+
+
+char **fast_backtrace_symbols(void **array, int size, int* used_size_ptr)
+{
+  int used_size = backtrace(array, size);
+
+  if (used_size_ptr != NULL)
+  {
+    *used_size_ptr = used_size;
+  }
+
+  if (used_size == 0)
+  {
     return NULL;
   }
 
-  *used_size = arg.cnt;
-
-  return backtrace_symbols(array, *used_size);
+  return backtrace_symbols(array, used_size);
 }
+#endif
