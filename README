@@ -5,7 +5,22 @@ GIT:
 
 NOTES:
         Library providing the same functionality like GLibc `backtrace_symbols`
-        call but many times faster and with demangled symbol names wherever possible.
+        call but many times faster and with demangled symbol names.
+
+        Tested the performance on my server where called GLibc backtrace
+        and GLlibc backtrace_symbols vs. Fast backtrace_symbols:
+
+
+        Measured backtrace_symbols calls only:
+
+            GLibc   ~ 4761 ms for 1 million calls.
+            Fast    ~  287 ms for 1 million calls.
+
+
+        Measured (backtrace + backtrace_symbols + free) calls altogether:
+
+            GLibc   ~ 8843 ms for 1 million calls.
+            Fast    ~ 4265 ms for 1 million calls.
 
 LICENSE:
         LGPLv3+
