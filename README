@@ -57,4 +57,4 @@ AUTHORS:
         Jan Horak
 
 REQUIREMENTS:
-        Recent g++, Linux
+        C++, Linux
