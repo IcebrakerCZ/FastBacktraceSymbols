@@ -1,4 +1,4 @@
-CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O3 -ggdb3
+CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O3 -gdwarf
 CXXFLGAS += -fno-omit-frame-pointer
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
@@ -14,10 +14,12 @@ TEST_A_LDFLAGS  = $(LDFLAGS)
 TEST_B_CXXFLAGS = $(CXXFLAGS) -fPIC -O0
 TEST_B_LDFLAGS  = $(LDFLAGS)
 
-LIB_CXXFLAGS = $(CXXFLAGS) -fPIC
-LIB_LDFLAGS  = $(LDFLAGS) -lbfd
+LIB_CXXFLAGS  = $(CXXFLAGS) -fPIC
+LIB_LDFLAGS   = $(LDFLAGS) -lbfd
 #LIB_LDFLAGS  += $(wildcard /usr/lib/x86_64-linux-gnu/libunwind*.so)
 #LIB_LDFLAGS += $(wildcard /usr/lib/x86_64-linux-gnu/libunwind*.a) -llzma
+
+TEST_ARGS ?= 20
 
 
 .PHONY: all
@@ -39,12 +41,12 @@ run: run-test-with-fast-backtrace-symbols run-test-without-fast-backtrace-symbol
 .PHONY: run-test-with-fast-backtrace-symbols
 run-test-with-fast-backtrace-symbols: test libfast_backtrace_symbols.so
 	@echo
-	LD_PRELOAD=$(PWD)/libfast_backtrace_symbols.so ./test
+	LD_PRELOAD=$(PWD)/libfast_backtrace_symbols.so ./test $(TEST_ARGS)
 
 .PHONY: run-test-without-fast-backtrace-symbols
 run-test-without-fast-backtrace-symbols: test
 	@echo
-	./test
+	./test $(TEST_ARGS)
 
 
 TEST_SRCS = test.cpp

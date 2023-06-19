@@ -11,16 +11,30 @@ NOTES:
         and GLlibc backtrace_symbols vs. Fast backtrace_symbols:
 
 
-        Measured backtrace_symbols calls only:
+        Measured performance:
 
-            Fast    ~  287 ms for 1 million calls.
-            GLibc   ~ 4761 ms for 1 million calls.
+          Scenario #1: 1 million calls of backtace_symbols only.
+
+              +-------+-----------------------------+
+              |       |          Stack depth        |
+              |       +---------+---------+---------+
+              |       |    5    |    10   |    20   |
+              +-------+---------+---------+---------+
+              | Fast  |   98 ms |  167 ms |  278 ms |
+              | GLibc | 1333 ms | 2494 ms | 4742 ms |
+              +-------+---------+---------+---------+
 
 
-        Measured (backtrace + backtrace_symbols + free) calls altogether:
+          Scenario #2: 1 million calls of backtrace + backtrace_symbols + free.
 
-            Fast    ~ 4265 ms for 1 million calls.
-            GLibc   ~ 8843 ms for 1 million calls.
+              +-------+-----------------------------+
+              |       |          Stack depth        |
+              |       +---------+---------+---------+
+              |       |    5    |    10   |    20   |
+              +-------+---------+---------+---------+
+              | Fast  | 1480 ms | 2453 ms | 4307 ms |
+              | GLibc | 2783 ms | 4835 ms | 8864 ms |
+              +-------+---------+---------+---------+
 
 LICENSE:
         LGPLv3+
