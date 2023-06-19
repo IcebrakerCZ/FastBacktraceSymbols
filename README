@@ -4,11 +4,13 @@ GIT:
         https://github.com/IcebrakerCZ/FastBacktraceSymbols.git
 
 NOTES:
-        Library providing the same functionality like GLibc `backtrace_symbols`
-        call but many times faster and with demangled symbol names.
+        15x faster version of GLibc `backtrace_symbols` and with already demangled symbol names.
 
-        Tested the performance on my server where called GLibc backtrace
-        and GLlibc backtrace_symbols vs. Fast backtrace_symbols:
+        5x faster when measured as a whole call of 'backtrace + backtrace_symbols + free'
+        and used as LD_PRELOAD together with libunwind.so.
+
+        2x faster when measured as a whole call of 'backtrace + backtrace_symbols + free'
+        and used with standard GLibc 'backtrace' implementation.
 
 
         Measured performance:
@@ -34,6 +36,18 @@ NOTES:
               +-------+---------+---------+---------+
               | Fast  | 1480 ms | 2453 ms | 4307 ms |
               | GLibc | 2783 ms | 4835 ms | 8864 ms |
+              +-------+---------+---------+---------+
+
+
+          Scenario #3: 1 million calls of backtrace + backtrace_symbols + free with LD_PRELOAD=x86_64/libunwind.so
+
+              +-------+-----------------------------+
+              |       |          Stack depth        |
+              |       +---------+---------+---------+
+              |       |    5    |    10   |    20   |
+              +-------+---------+---------+---------+
+              | Fast  |  325 ms |  583 ms | 1087 ms |
+              | GLibc | 1474 ms | 2734 ms | 5174 ms |
               +-------+---------+---------+---------+
 
 LICENSE:

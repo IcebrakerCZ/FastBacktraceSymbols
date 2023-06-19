@@ -241,7 +241,7 @@ private:
     result += filename;
     result += ":";
     result += std::to_string(line);
-    result += "\t";
+    result += " ";
     result += demangled_functionname;
 
     return m_addresses.emplace(std::make_pair(addr, std::move(result))).first->second;
@@ -401,11 +401,12 @@ static BacktraceFiles backtrace_files;
 
 extern "C"
 {
-  char **backtrace_symbols(void *const *buffer, int stack_depth);
+  char** backtrace_symbols(void * const * buffer, int stack_depth);
+  char** fast_backtrace_symbols(void * const * buffer, int stack_depth);
 }
 
 
-char **backtrace_symbols(void *const *buffer, int stack_depth)
+char** backtrace_symbols(void * const * buffer, int stack_depth)
 {
   char ** locations = (char**) malloc(stack_depth * sizeof(char*));
 
@@ -417,92 +418,15 @@ char **backtrace_symbols(void *const *buffer, int stack_depth)
   return locations;
 }
 
-
-#if 0
-#include <unwind.h>
-#include <libunwind.h>
-
-struct trace_arg
+char** fast_backtrace_symbols(void * const * buffer, int stack_depth)
 {
-  void **array;
-  _Unwind_Word cfa;
-  int cnt;
-  int size;
-};
+  char ** locations = (char**) malloc(stack_depth * sizeof(char*));
 
-
-static _Unwind_Reason_Code
-backtrace_helper (struct _Unwind_Context *ctx, void *a)
-{
-  struct trace_arg *arg = (struct trace_arg *) a;
-
-  /* We are first called with address in the __backtrace function.
-     Skip it.  */
-  if (arg->cnt != -1)
+  for (int x = stack_depth - 1; x >= 0; --x)
   {
-    arg->array[arg->cnt] = (void *) _Unwind_GetIP (ctx);
-
-    /* Check whether we make any progress.  */
-    _Unwind_Word cfa = _Unwind_GetCFA (ctx);
-
-    if (arg->cnt > 0 && arg->array[arg->cnt - 1] == arg->array[arg->cnt] && cfa == arg->cfa)
-    {
-        return _URC_END_OF_STACK;
-    }
-
-    arg->cfa = cfa;
+    locations[x] = (char*) backtrace_files.FindMatchingSymbol(buffer[x]).c_str();
   }
 
-  if (++arg->cnt == arg->size)
-  {
-    return _URC_END_OF_STACK;
-  }
-
-  return _URC_NO_REASON;
+  return locations;
 }
 
-
-int backtrace(void **array, int size)
-{
-  if (size <= 0)
-  {
-    return 0;
-  }
-
-  struct trace_arg arg = {.array = array, .cfa = 0, .cnt = -1 , .size = size};
-
-  _Unwind_Backtrace(backtrace_helper, &arg);
-
-  /* _Unwind_Backtrace seems to put NULL address above
-     _start.  Fix it up here.  */
-  if (arg.cnt > 1 && arg.array[arg.cnt - 1] == NULL)
-  {
-    --arg.cnt;
-  }
-
-  if (arg.cnt == -1)
-  {
-    return 0;
-  }
-
-  return arg.cnt;
-}
-
-
-char **fast_backtrace_symbols(void **array, int size, int* used_size_ptr)
-{
-  int used_size = backtrace(array, size);
-
-  if (used_size_ptr != NULL)
-  {
-    *used_size_ptr = used_size;
-  }
-
-  if (used_size == 0)
-  {
-    return NULL;
-  }
-
-  return backtrace_symbols(array, used_size);
-}
-#endif
