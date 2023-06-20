@@ -1,0 +1,69 @@
+#!/bin/bash
+
+#
+# This file is part of FastBacktraceSymbols.
+#
+# Copyright Jan Horak 2023
+#
+# Based on mutrace shell script: Copyright 2009 Lennart Poettering
+#
+
+if ! TEMP=`getopt -o +h --long help -n fast_backtrace_symbols -- "$@"` ; then
+    exit 1
+fi
+
+eval set -- "$TEMP"
+
+while : ; do
+  case $1 in
+    -h|--help)
+      cat <<EOF
+fast_backtrace_symbols 0.1
+
+Usage: fast_backtrace_symbols [OPTIONS...] APPLICATION [ARGUMENTS...]
+
+COMMANDS:
+  -h, --help                      Show this help
+EOF
+      exit 0
+      ;;
+
+    --)
+      shift
+      break
+      ;;
+
+    *)
+      echo "Parsing failed! '$1'" >&2
+      exit 1
+      ;;
+
+  esac
+
+done
+
+shift $(($OPTIND-1))
+
+if [ x"$1" = x ] ; then
+  echo "Please specify an application to use!" >&2
+  exit 1
+fi
+
+if test -e "/usr/lib/x86_64-linux-gnu/libunwind.so" ; then
+  if [ x"$LD_PRELOAD" = x ] ; then
+    export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libunwind.so"
+  else
+    export LD_PRELOAD="$LD_PRELOAD:/usr/lib/x86_64-linux-gnu/libunwind.so"
+  fi
+fi
+
+CURDIR=`realpath "$0"`
+CURDIR=`dirname "$CURDIR"`
+
+if [ x"$LD_PRELOAD" = x ] ; then
+  export LD_PRELOAD="$CURDIR/libfast_backtrace_symbols.so"
+else
+  export LD_PRELOAD="$LD_PRELOAD:$CURDIR/libfast_backtrace_symbols.so"
+fi
+
+exec "$@"

@@ -38,6 +38,3 @@ test
 # Backups
 *~
 *.bak
-
-# Scripts
-fast_backtrace_symbols
