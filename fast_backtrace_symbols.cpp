@@ -393,7 +393,7 @@ private:
 }; // class BacktraceFiles
 
 
-static BacktraceFiles backtrace_files;
+static BacktraceFiles* backtrace_files = nullptr;
 
 
 } // anonymous namespace
@@ -401,32 +401,39 @@ static BacktraceFiles backtrace_files;
 
 extern "C"
 {
+  void backtrace_symbols_init()  __attribute__((constructor));
+  void backtrace_symbols_finish() __attribute__((destructor));
+
   char** backtrace_symbols(void * const * buffer, int stack_depth);
-  char** fast_backtrace_symbols(void * const * buffer, int stack_depth);
+}
+
+
+void backtrace_symbols_init()
+{
+  backtrace_files = new BacktraceFiles();
+}
+
+
+void backtrace_symbols_finish()
+{
+  // backtrace_files is not freed because the cached backtrace_symbols string arrays still can be used.
+  backtrace_files = nullptr;
 }
 
 
 char** backtrace_symbols(void * const * buffer, int stack_depth)
 {
+  if (backtrace_files == nullptr)
+  {
+    return nullptr;
+  }
+
   char ** locations = (char**) malloc(stack_depth * sizeof(char*));
 
   for (int x = stack_depth - 1; x >= 0; --x)
   {
-    locations[x] = (char*) backtrace_files.FindMatchingSymbol(buffer[x]).c_str();
+    locations[x] = (char*) backtrace_files->FindMatchingSymbol(buffer[x]).c_str();
   }
 
   return locations;
 }
-
-char** fast_backtrace_symbols(void * const * buffer, int stack_depth)
-{
-  char ** locations = (char**) malloc(stack_depth * sizeof(char*));
-
-  for (int x = stack_depth - 1; x >= 0; --x)
-  {
-    locations[x] = (char*) backtrace_files.FindMatchingSymbol(buffer[x]).c_str();
-  }
-
-  return locations;
-}
-
