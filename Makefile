@@ -82,9 +82,20 @@ libtest_b.so: $(LIB_TEST_B_OBJS)
 
 LIB_FAST_BACKTRACE_SYMBOLS_SRCS = fast_backtrace_symbols.cpp
 LIB_FAST_BACKTRACE_SYMBOLS_OBJS = $(LIB_FAST_BACKTRACE_SYMBOLS_SRCS:.cpp=.o)
-$(LIB_FAST_BACKTRACE_SYMBOLS_OBJS): %.o: %.cpp
+$(LIB_FAST_BACKTRACE_SYMBOLS_OBJS): %.o: %.cpp glibc_versions.h
 	$(CXX) $(LIB_FAST_BACKTRACE_SYMBOLS_CXXFLAGS) -c -o $@ $<
 
 
 libfast_backtrace_symbols.so: $(LIB_FAST_BACKTRACE_SYMBOLS_OBJS)
 	$(CXX) -o $@ $^ -shared $(LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS)
+
+
+glibc_versions.h:
+	strings /lib/x86_64-linux-gnu/libc.so.6                                      \
+	    | grep GLIBC_                                                            \
+	    | grep -v GLIBC_PRIVATE                                                  \
+	    | sort -rV                                                               \
+	    | sed -E -e '1 { s/^(.*)$$/const char* glibc_versions[] = { "\1"/ }'     \
+	             -e '2,999 { s/^(.*)$$/                               , "\1"/ }' \
+	    > $@
+	echo "                              };" >> $@

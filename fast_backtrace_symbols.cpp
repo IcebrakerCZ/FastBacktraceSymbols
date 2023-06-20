@@ -77,8 +77,10 @@ public:
 
     if (m_abfd)
     {
-      bfd_close(m_abfd);
+      bfd_close_all_done(m_abfd);
     }
+
+    // Intentionally never deletes the m_addresses std::string pointers
   }
 
 
@@ -149,7 +151,7 @@ public:
       auto iter = m_addresses.find(addr);
       if (iter != m_addresses.end())
       {
-        return iter->second;
+        return *iter->second;
       }
     }
 
@@ -158,7 +160,7 @@ public:
     auto iter = m_addresses.find(addr);
     if (iter != m_addresses.end())
     {
-      return iter->second;
+      return *iter->second;
     }
 
     return UpdateAddress(addr);
@@ -195,7 +197,7 @@ private:
 
   const std::string& UpdateAddress(bfd_vma addr)
   {
-    std::string result;
+    std::string* result = new std::string;
 
     const char* filename = NULL;
     const char* functionname = NULL;
@@ -203,11 +205,11 @@ private:
 
     if (!FindAddressInSections(addr, &filename, &functionname, &line))
     {
-      result += "[0x";
-      result += std::to_string(addr);
-      result += "] \?\?() \?\?:0";
+      *result += "[0x";
+      *result += std::to_string(addr);
+      *result += "] \?\?() \?\?:0";
 
-      return m_addresses.emplace(std::make_pair(addr, std::move(result))).first->second;
+      return *m_addresses.emplace(std::make_pair(addr, result)).first->second;
     }
 
     const char *demangled_functionname = NULL;
@@ -238,13 +240,13 @@ private:
       }
     }
 
-    result += filename;
-    result += ":";
-    result += std::to_string(line);
-    result += " ";
-    result += demangled_functionname;
+    *result += filename;
+    *result += ":";
+    *result += std::to_string(line);
+    *result += " ";
+    *result += demangled_functionname;
 
-    return m_addresses.emplace(std::make_pair(addr, std::move(result))).first->second;
+    return *m_addresses.emplace(std::make_pair(addr, result)).first->second;
   }
 
 
@@ -275,7 +277,8 @@ public:
   asymbol **m_static_syms = NULL;
   asymbol **m_dynamic_syms = NULL;
 
-  std::map<bfd_vma, std::string> m_addresses;
+  // Note: the std::string pointers are intentionally never deleted
+  std::map<bfd_vma, std::string*> m_addresses;
 
   std::vector<std::tuple<bfd_vma, bfd_size_type, asection*>> m_sections;
 
@@ -393,6 +396,7 @@ private:
 }; // class BacktraceFiles
 
 
+// Note: the cached backtrace_symbols string arrays are never freed because they still must be usable.
 static BacktraceFiles* backtrace_files = nullptr;
 
 
@@ -405,19 +409,6 @@ extern "C"
   void backtrace_symbols_finish() __attribute__((destructor));
 
   char** backtrace_symbols(void * const * buffer, int stack_depth);
-}
-
-
-void backtrace_symbols_init()
-{
-  backtrace_files = new BacktraceFiles();
-}
-
-
-void backtrace_symbols_finish()
-{
-  // backtrace_files is not freed because the cached backtrace_symbols string arrays still can be used.
-  backtrace_files = nullptr;
 }
 
 
@@ -436,4 +427,20 @@ char** backtrace_symbols(void * const * buffer, int stack_depth)
   }
 
   return locations;
+}
+
+
+void backtrace_symbols_init()
+{
+  backtrace_files = new BacktraceFiles();
+}
+
+
+void backtrace_symbols_finish()
+{
+  BacktraceFiles* tmp = backtrace_files;
+
+  backtrace_files = nullptr;
+
+  delete tmp;
 }

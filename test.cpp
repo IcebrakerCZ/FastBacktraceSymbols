@@ -1,5 +1,4 @@
 #include "test_a.h"
-//#include "fast_backtrace_symbols.h"
 
 #include <chrono>
 #include <iostream>
@@ -9,7 +8,6 @@
 
 #include <assert.h>
 #include <execinfo.h>
-//#include <libunwind.h>
 
 
 constexpr unsigned MAX_DEPTH = 200;
@@ -53,15 +51,20 @@ bool backtrace_symbols_test(const unsigned DEPTH)
     char **bt_symbols = backtrace_symbols(buffer, used_size);
 
     duration += std::chrono::high_resolution_clock::now() - start;
-#if 0
+
     if (i == 0)
     {
-      for (int n = 0; n < used_size; ++n)
+      std::cout << "backtrace begin" << std::endl;
+
+      for (unsigned n = 0; n < used_size; ++n)
       {
-        std::cout << "backtrace[" << n << "]: " << bt_symbols[n] << std::endl;
+        std::cout << "backtrace (depth=" << n << "): " << bt_symbols[n] << std::endl;
       }
+
+      std::cout << "backtrace end" << std::endl;
+      std::cout << std::endl;
     }
-#endif
+
     free(bt_symbols);
 
     assert(used_size == DEPTH);
