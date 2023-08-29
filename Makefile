@@ -1,4 +1,4 @@
-CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O3 -gdwarf
+CXXFLAGS  = -m64 -std=c++17 -Wall -Werror -O3 -ggdb3
 CXXFLGAS += -fno-omit-frame-pointer
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
@@ -11,7 +11,7 @@ TEST_LDFLAGS  = $(LDFLAGS) -Wl,-rpath,$(PWD)
 
 
 LIB_CXXFLAGS  = $(CXXFLAGS) -fPIC
-LIB_LDFLAGS   = $(LDFLAGS) -lbfd
+LIB_LDFLAGS   = $(LDFLAGS)
 
 LIB_TEST_A_CXXFLAGS = $(LIB_CXXFLAGS) -O0
 LIB_TEST_A_LDFLAGS  = $(LIB_LDFLAGS)
@@ -19,8 +19,17 @@ LIB_TEST_A_LDFLAGS  = $(LIB_LDFLAGS)
 LIB_TEST_B_CXXFLAGS = $(LIB_CXXFLAGS) -O0
 LIB_TEST_B_LDFLAGS  = $(LIB_LDFLAGS)
 
-LIB_FAST_BACKTRACE_SYMBOLS_CXXFLAGS = $(LIB_CXXFLAGS)
-LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS  = $(LIB_LDFLAGS) -lbfd
+LIB_FAST_BACKTRACE_SYMBOLS_CXXFLAGS  = $(LIB_CXXFLAGS)
+#LIB_FAST_BACKTRACE_SYMBOLS_CXXFLAGS += -nostdlib -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
+LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS  = $(LIB_LDFLAGS)
+LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += -Wl,-Bsymbolic
+LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += -ldl
+LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += -lbfd
+#LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += /usr/lib/x86_64-linux-gnu/libbfd.a
+#LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += /usr/lib/x86_64-linux-gnu/libiberty.a
+#LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += /usr/lib/x86_64-linux-gnu/libunwind.a
+#LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += -static-libstdc++
+#LIB_FAST_BACKTRACE_SYMBOLS_LDFLAGS += -B /usr/share/libhugetlbfs -Wl,--hugetlbfs-align -lhugetlbfs
 
 
 TEST_ARGS ?= 20
@@ -35,7 +44,7 @@ clean:
 	rm -f test $(TEST_OBJS)
 	rm -f libtest_a.so $(LIB_TEST_A_OBJS)
 	rm -f libtest_b.so $(LIB_TEST_B_OBJS)
-	rm -f libfast_backtrace_symbols.so $(LIB_FAST_BACKTRACE_SYMBOLS_OBJS)
+	rm -f libfast_backtrace_symbols.so $(LIB_FAST_BACKTRACE_SYMBOLS_OBJS) glibc_versions.h
 
 
 .PHONY: run

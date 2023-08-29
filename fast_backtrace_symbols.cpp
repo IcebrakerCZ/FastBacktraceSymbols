@@ -297,11 +297,15 @@ public:
   }
 
 
-  const std::string& FindMatchingSymbol(void* symbol_addr)
+  const char* FindMatchingSymbol(void* symbol_addr)
   {
-    BacktraceSymbols& item = FindMatchingFile(symbol_addr);
+    BacktraceSymbols* item = FindMatchingFile(symbol_addr);
+    if (item == nullptr)
+    {
+      return "<unknown>";
+    }
 
-    return item.DemangleSymbol(symbol_addr);
+    return item->DemangleSymbol(symbol_addr).c_str();
   }
 
 
@@ -319,30 +323,29 @@ private:
     }
   };
 
-  BacktraceSymbols& FindMatchingFile(void* symbol_addr)
+  BacktraceSymbols* FindMatchingFile(void* symbol_addr)
   {
     {
-      std::shared_lock lock(backtrace_mutex);
+      std::shared_lock<decltype(backtrace_mutex)> lock(backtrace_mutex);
 
       auto iter = m_symbol_intervals.find({symbol_addr, symbol_addr});
       if (iter != m_symbol_intervals.end())
       {
-        return *iter->second;
+        return iter->second;
       }
     }
 
-    std::unique_lock lock(backtrace_mutex);
+    std::unique_lock<decltype(backtrace_mutex)> lock(backtrace_mutex);
 
     dl_iterate_phdr(FindMatchingFileCallback, this);
 
     auto iter = m_symbol_intervals.find({symbol_addr, symbol_addr});
     if (iter != m_symbol_intervals.end())
     {
-      return *iter->second;
+      return iter->second;
     }
 
-    printf("Symbol %p not found in the process.\n", symbol_addr);
-    abort();
+    return nullptr;
   }
 
 
@@ -420,10 +423,19 @@ char** backtrace_symbols(void * const * buffer, int stack_depth)
   }
 
   char ** locations = (char**) malloc(stack_depth * sizeof(char*));
+  if (!locations)
+  {
+    return nullptr;
+  }
 
   for (int x = stack_depth - 1; x >= 0; --x)
   {
-    locations[x] = (char*) backtrace_files->FindMatchingSymbol(buffer[x]).c_str();
+    locations[x] = (char*) backtrace_files->FindMatchingSymbol(buffer[x]);
+    if (!locations[x])
+    {
+      free(locations);
+      return nullptr;
+    }
   }
 
   return locations;
